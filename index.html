@@ -2,13 +2,35 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>Pale Vigil</title>
-    <meta name="description" content="A horror monster-binding RPG. Bind the Dreads, defeat the King's Guard, relight the Vigil Flame." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>Pale Vigil — Bind the Dreads, Relight the Flame</title>
+    <meta name="description" content="A horror monster-binding RPG. Explore Hollow Vale, bind the Dreads, defeat the King's Guard, and relight the Vigil Flame." />
     <meta name="theme-color" content="#0b0a10" />
+
+    <!-- favicons (boy sprite) -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!-- installable web app -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Pale Vigil" />
+
+    <!-- social -->
+    <meta property="og:title" content="Pale Vigil" />
+    <meta property="og:description" content="A horror monster-binding RPG. Bind the Dreads, defeat the King's Guard, relight the Vigil Flame." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icon-512.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <style>
       html, body, #root { margin: 0; padding: 0; background: #0b0a10; min-height: 100%; }
-      body { overscroll-behavior: none; }
+      html { height: -webkit-fill-available; }
+      body { overscroll-behavior: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
     </style>
   </head>
   <body>
