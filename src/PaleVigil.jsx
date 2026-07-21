@@ -2194,6 +2194,18 @@ export default function PaleVigil() {
   const joyActiveRef = useRef(false);
   const [joyKnob, setJoyKnob] = useState(null);
 
+  // ---------- mobile entry gate ----------
+  // On touch devices the whole game stays hidden behind a tap-to-enter prompt so
+  // it never shows (especially in portrait) until the player enters — and so the
+  // landscape lock can fire on that real user gesture.
+  const [isTouch] = useState(() => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+  const [entered, setEntered] = useState(false);
+  const enterMobile = () => {
+    try { const el = document.documentElement; if (el.requestFullscreen) { const p = el.requestFullscreen(); if (p && p.catch) p.catch(() => {}); } } catch (e) {}
+    try { const p = screen.orientation && screen.orientation.lock && screen.orientation.lock("landscape"); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+    setEntered(true);
+  };
+
   const joySample = (clientX, clientY) => {
     const el = joyElRef.current;
     if (!el) return;
@@ -2249,18 +2261,16 @@ export default function PaleVigil() {
     return () => { clearInterval(walker); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("blur", onBlur); };
   }, [act]);
 
-  // Best-effort landscape lock (installed PWA / Android Chrome). Where it isn't
-  // supported (iOS Safari) the CSS "rotate your device" prompt covers portrait.
+  // Track orientation so the gate shows the right message and dismisses itself
+  // once the device is actually landscape.
+  const [portrait, setPortrait] = useState(() => typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(orientation: portrait)").matches);
   useEffect(() => {
-    const lock = () => {
-      try {
-        const p = screen.orientation && screen.orientation.lock && screen.orientation.lock("landscape");
-        if (p && p.catch) p.catch(() => {});
-      } catch (e) {}
-    };
-    lock();
-    window.addEventListener("orientationchange", lock);
-    return () => window.removeEventListener("orientationchange", lock);
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(orientation: portrait)");
+    const on = () => setPortrait(mq.matches);
+    on();
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () => { mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on); };
   }, []);
 
   function beginGame(g) { g.screen = "setup"; }
@@ -3110,17 +3120,22 @@ export default function PaleVigil() {
     threshold: "linear-gradient(#1a1226,#0c0814)",
   }[themeKey];
 
+  const showGate = isTouch && (!entered || portrait);
+
   return (
     <div className="pv-root">
       <style>{PV_CSS}</style>
 
-      {/* portrait prompt — shown by CSS only on touch devices held upright */}
-      <div className="pv-rotate">
-        <div className="pv-rotate-icon">↻</div>
-        <div className="pv-rotate-title">ROTATE YOUR DEVICE</div>
-        <div className="pv-rotate-sub">Pale Vigil is played in landscape.</div>
-      </div>
-
+      {showGate ? (
+        /* On touch devices the game is fully hidden until the player taps to enter. */
+        <div className="pv-gate" onClick={enterMobile}>
+          <div className="pv-gate-icon">{portrait ? "↻" : "✦"}</div>
+          <div className="pv-gate-title">{portrait ? "ROTATE TO LANDSCAPE" : "PALE VIGIL"}</div>
+          <div className="pv-gate-sub">{portrait ? "Pale Vigil is played sideways — turn your device, then tap." : "Best played in landscape. Tap to begin."}</div>
+          <button className="pv-btn pv-gate-btn">ENTER</button>
+        </div>
+      ) : (
+      <>
       {/* ---------- TITLE ---------- */}
       {G.screen === "title" && (
         <div className="pv-title">
@@ -3425,6 +3440,8 @@ export default function PaleVigil() {
           </div>
         </div>
       )}
+      </>
+      )}
     </div>
   );
 }
@@ -3454,10 +3471,14 @@ const PV_CSS = `
   .pv-controls { color: #6a6055; font-size: 11px; margin-top: 40px; line-height: 1.8; }
   @keyframes pv-breathe { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
 
-  .pv-world { position: relative; width: 100%; max-width: 768px; }
+  /* the overworld scales to fill most of the window (both axes), keeping its
+     3:2 pixel ratio, with a little breathing room. width:fit-content keeps the
+     HUD and dialog aligned to the canvas rather than the whole window. */
+  .pv-world { position: relative; width: fit-content; max-width: 100%; margin: auto; }
   .pv-hud { display: flex; justify-content: space-between; align-items: center; padding: 8px 4px; font-size: 13px; letter-spacing: 0.2em; }
   .pv-hud-right { display: flex; align-items: center; gap: 10px; }
-  .pv-canvas { width: 100%; image-rendering: pixelated; display: block; border: 1px solid #2c2636; }
+  .pv-canvas { display: block; margin: 0 auto; width: min(96vw, calc((100dvh - 64px) * 1.5)); height: auto;
+    image-rendering: pixelated; border: 1px solid #2c2636; }
   .pv-dialog { position: absolute; left: 8px; right: 8px; bottom: 8px; background: rgba(10,8,14,0.94); border: 1px solid #6a6050; padding: 12px 16px 18px; font-size: 14px; line-height: 1.6; cursor: pointer; min-height: 58px; }
   .pv-speaker { color: #c9a55c; font-size: 11px; letter-spacing: 0.2em; margin-bottom: 4px; }
   .pv-more { position: absolute; right: 10px; bottom: 4px; color: #c9a55c; animation: pv-breathe 1s ease-in-out infinite; font-size: 11px; }
@@ -3486,7 +3507,7 @@ const PV_CSS = `
   .pv-xpbar { height: 4px; background: #221e2c; border: 1px solid #3a3448; margin-top: 4px; }
   .pv-xpbar > div { height: 100%; background: #7a8ac8; transition: width 0.25s ease; }
 
-  .pv-battle { width: 100%; max-width: 768px; min-height: 100vh; display: flex; flex-direction: column; }
+  .pv-battle { width: 100%; max-width: min(96vw, 1000px); min-height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; }
   .pv-arena { position: relative; flex: 1; min-height: 300px; }
   .pv-panel { background: rgba(10,8,14,0.85); border: 1px solid #6a6050; padding: 8px 12px; font-size: 13px; width: 230px; }
   .pv-foe-panel { position: absolute; top: 16px; left: 16px; }
@@ -3551,22 +3572,13 @@ const PV_CSS = `
     border: 1px solid #c9a55c; box-shadow: 0 2px 8px rgba(0,0,0,0.6); pointer-events: none; transition: transform 0.06s linear; }
   @media (pointer: coarse) { .pv-joy { display: block; } }
 
-  /* portrait rotate prompt (touch devices only) */
-  .pv-rotate { display: none; }
-  @media (pointer: coarse) and (orientation: portrait) {
-    .pv-rotate { display: flex; position: fixed; inset: 0; z-index: 9999; background: #0b0a10;
-      flex-direction: column; align-items: center; justify-content: center; text-align: center;
-      padding: max(24px, env(safe-area-inset-top)) 24px 24px; }
-    .pv-rotate-icon { font-size: 54px; color: #c9a55c; animation: pv-breathe 2s ease-in-out infinite; }
-    .pv-rotate-title { margin-top: 14px; letter-spacing: 0.3em; color: #e6dfcd; font-size: 15px; }
-    .pv-rotate-sub { margin-top: 8px; color: #8a8070; font-size: 12px; font-style: italic; }
-  }
-
-  /* fit the canvas to the screen height in landscape on phones */
-  @media (pointer: coarse) and (orientation: landscape) {
-    .pv-world { max-width: none; }
-    .pv-canvas { height: calc(100dvh - 44px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
-      width: auto; max-width: 100%; margin: 0 auto; }
-    .pv-battle { min-height: 100dvh; }
-  }
+  /* mobile entry gate — JS-controlled; the game is not rendered behind it */
+  .pv-gate { position: fixed; inset: 0; z-index: 10000; background: #0b0a10; color: #d8d2c4;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+    padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+    cursor: pointer; user-select: none; -webkit-user-select: none; }
+  .pv-gate-icon { font-size: 60px; color: #c9a55c; animation: pv-breathe 2s ease-in-out infinite; }
+  .pv-gate-title { margin-top: 16px; letter-spacing: 0.3em; color: #e6dfcd; font-size: 18px; }
+  .pv-gate-sub { margin-top: 10px; color: #8a8070; font-size: 13px; font-style: italic; line-height: 1.6; max-width: 320px; }
+  .pv-gate-btn { margin-top: 26px; font-size: 15px; }
 `;
