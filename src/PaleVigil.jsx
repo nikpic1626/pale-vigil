@@ -2186,6 +2186,35 @@ export default function PaleVigil() {
   const act = useCallback((fn) => setG((g) => { const d = structuredClone(g); fn(d); return d; }), []);
   const keysRef = useRef(new Set());
 
+  // ---------- touch joystick ----------
+  // Direction is derived from the touch position RELATIVE TO THE STICK'S OWN
+  // CENTRE (never absolute screen coordinates), so it works wherever it sits.
+  const joyRef = useRef({ dx: 0, dy: 0 });
+  const joyElRef = useRef(null);
+  const joyActiveRef = useRef(false);
+  const [joyKnob, setJoyKnob] = useState(null);
+
+  const joySample = (clientX, clientY) => {
+    const el = joyElRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2; // the stick's own centre
+    const dx = clientX - cx, dy = clientY - cy;                 // touch relative to that centre
+    const rad = r.width / 2;
+    const dist = Math.hypot(dx, dy);
+    const kd = Math.min(dist, rad);                             // clamp knob inside the base (never spills)
+    setJoyKnob(dist > 0 ? { x: (dx / dist) * kd, y: (dy / dist) * kd } : { x: 0, y: 0 });
+    if (dist < rad * 0.34) { joyRef.current = { dx: 0, dy: 0 }; return; } // dead zone
+    let ndx = 0, ndy = 0;
+    if (Math.abs(dx) > Math.abs(dy)) ndx = dx > 0 ? 1 : -1; else ndy = dy > 0 ? 1 : -1;
+    const prev = joyRef.current;
+    joyRef.current = { dx: ndx, dy: ndy };
+    if (prev.dx !== ndx || prev.dy !== ndy) act((g) => moveP(g, ndx, ndy)); // instant step on a new direction
+  };
+  const joyStart = (e) => { joyActiveRef.current = true; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} joySample(e.clientX, e.clientY); };
+  const joyMove = (e) => { if (joyActiveRef.current) joySample(e.clientX, e.clientY); };
+  const joyEnd = () => { joyActiveRef.current = false; joyRef.current = { dx: 0, dy: 0 }; setJoyKnob(null); };
+
   useEffect(() => {
     const DIRS = { ArrowUp: [0, -1], w: [0, -1], ArrowDown: [0, 1], s: [0, 1], ArrowLeft: [-1, 0], a: [-1, 0], ArrowRight: [1, 0], d: [1, 0] };
     const onKey = (e) => {
@@ -2209,15 +2238,30 @@ export default function PaleVigil() {
     const onKeyUp = (e) => { keysRef.current.delete(e.key); };
     const onBlur = () => keysRef.current.clear();
     const walker = setInterval(() => {
-      for (const k of keysRef.current) {
-        if (DIRS[k]) { act((g) => moveP(g, DIRS[k][0], DIRS[k][1])); break; }
-      }
+      let dir = null;
+      for (const k of keysRef.current) { if (DIRS[k]) { dir = DIRS[k]; break; } }
+      if (!dir) { const j = joyRef.current; if (j.dx || j.dy) dir = [j.dx, j.dy]; } // held joystick repeats too
+      if (dir) act((g) => moveP(g, dir[0], dir[1]));
     }, 135);
     window.addEventListener("keydown", onKey);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", onBlur);
     return () => { clearInterval(walker); window.removeEventListener("keydown", onKey); window.removeEventListener("keyup", onKeyUp); window.removeEventListener("blur", onBlur); };
   }, [act]);
+
+  // Best-effort landscape lock (installed PWA / Android Chrome). Where it isn't
+  // supported (iOS Safari) the CSS "rotate your device" prompt covers portrait.
+  useEffect(() => {
+    const lock = () => {
+      try {
+        const p = screen.orientation && screen.orientation.lock && screen.orientation.lock("landscape");
+        if (p && p.catch) p.catch(() => {});
+      } catch (e) {}
+    };
+    lock();
+    window.addEventListener("orientationchange", lock);
+    return () => window.removeEventListener("orientationchange", lock);
+  }, []);
 
   function beginGame(g) { g.screen = "setup"; }
 
@@ -2229,7 +2273,7 @@ export default function PaleVigil() {
       `${g.name}. Hollow Vale has been waiting for you.`,
       "For 400 years the Vigil Flame held the Veil shut, and the Dreads were only stories. Three nights ago, the Flame went out.",
       "— HOW TO SURVIVE —",
-      "Move with WASD or the arrow keys. Hold a key to walk. Walk INTO people to speak with them.",
+      "Move with WASD, the arrow keys, or the on-screen stick. Hold to walk. Walk INTO people to speak with them; tap to advance text.",
       "Tall, dark grass hides wild Dreads. Weaken one in battle, then cast a Binding Sigil from your BAG to bind it to your party.",
       "Glowing doors and wayshrine candles — small flames on stone — fully heal your party. Always free.",
       "Open the MENU for your party, bag, world map, and save sigils. Check each Dread's Ability, and equip Charms from the shop.",
@@ -3070,6 +3114,13 @@ export default function PaleVigil() {
     <div className="pv-root">
       <style>{PV_CSS}</style>
 
+      {/* portrait prompt — shown by CSS only on touch devices held upright */}
+      <div className="pv-rotate">
+        <div className="pv-rotate-icon">↻</div>
+        <div className="pv-rotate-title">ROTATE YOUR DEVICE</div>
+        <div className="pv-rotate-sub">Pale Vigil is played in landscape.</div>
+      </div>
+
       {/* ---------- TITLE ---------- */}
       {G.screen === "title" && (
         <div className="pv-title">
@@ -3077,7 +3128,7 @@ export default function PaleVigil() {
           <h1>PALE VIGIL</h1>
           <p className="pv-sub">The Flame is out. The Veil is thin.<br />Bind what comes through.</p>
           <button className="pv-btn pv-begin" onClick={() => act((g) => beginGame(g))}>BEGIN THE VIGIL</button>
-          <p className="pv-controls">move: WASD or arrow keys (hold to walk) · advance: Space, Enter, or click<br />walk into people to speak with them</p>
+          <p className="pv-controls">move: WASD / arrow keys / the on-screen stick (hold to walk) · advance: Space, Enter, or tap<br />walk into people to speak with them</p>
         </div>
       )}
 
@@ -3132,6 +3183,17 @@ export default function PaleVigil() {
           </div>
           <canvas ref={canvasRef} width={1536} height={1024} className="pv-canvas"
             onClick={() => act((g) => { if (g.dialog) advanceDialog(g); })} />
+
+          {/* touch joystick — only while the overworld is interactive */}
+          {!G.dialog && !G.menu && !G.shop && !G.starterPick && !G.saveIO && !(G.learnQueue && G.learnQueue.length) && (
+            <div className="pv-joy" ref={joyElRef}
+              onPointerDown={joyStart} onPointerMove={joyMove}
+              onPointerUp={joyEnd} onPointerCancel={joyEnd}
+              onContextMenu={(e) => e.preventDefault()}>
+              <span className="pv-joy-ring" />
+              <span className="pv-joy-knob" style={joyKnob ? { transform: `translate(${joyKnob.x}px, ${joyKnob.y}px)` } : undefined} />
+            </div>
+          )}
 
           {/* dialog box */}
           {G.dialog && (
@@ -3471,5 +3533,40 @@ const PV_CSS = `
     .pv-panel { width: 170px; font-size: 11px; }
     .pv-foe-spr { right: 12px; top: 90px; }
     .pv-me-spr { left: 12px; }
+  }
+
+  /* ----- touch / mobile / safe areas ----- */
+  /* pad the whole app by the device safe-area insets so no edge control is unreachable */
+  .pv-root { min-height: 100dvh; box-sizing: border-box;
+    padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }
+
+  .pv-joy { display: none; position: absolute; left: 14px; bottom: 14px; z-index: 15;
+    width: min(30vw, 30dvh, 148px); height: min(30vw, 30dvh, 148px);
+    border-radius: 50%; touch-action: none; user-select: none; -webkit-user-select: none;
+    background: radial-gradient(circle at 50% 42%, rgba(40,34,52,0.55), rgba(10,8,14,0.42));
+    border: 1px solid rgba(201,165,92,0.35); box-shadow: inset 0 0 18px rgba(0,0,0,0.5); }
+  .pv-joy-ring { position: absolute; inset: 22%; border-radius: 50%; border: 1px dashed rgba(201,165,92,0.28); pointer-events: none; }
+  .pv-joy-knob { position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; margin: -21% 0 0 -21%;
+    border-radius: 50%; background: radial-gradient(circle at 40% 35%, #6a6050, #2c2636);
+    border: 1px solid #c9a55c; box-shadow: 0 2px 8px rgba(0,0,0,0.6); pointer-events: none; transition: transform 0.06s linear; }
+  @media (pointer: coarse) { .pv-joy { display: block; } }
+
+  /* portrait rotate prompt (touch devices only) */
+  .pv-rotate { display: none; }
+  @media (pointer: coarse) and (orientation: portrait) {
+    .pv-rotate { display: flex; position: fixed; inset: 0; z-index: 9999; background: #0b0a10;
+      flex-direction: column; align-items: center; justify-content: center; text-align: center;
+      padding: max(24px, env(safe-area-inset-top)) 24px 24px; }
+    .pv-rotate-icon { font-size: 54px; color: #c9a55c; animation: pv-breathe 2s ease-in-out infinite; }
+    .pv-rotate-title { margin-top: 14px; letter-spacing: 0.3em; color: #e6dfcd; font-size: 15px; }
+    .pv-rotate-sub { margin-top: 8px; color: #8a8070; font-size: 12px; font-style: italic; }
+  }
+
+  /* fit the canvas to the screen height in landscape on phones */
+  @media (pointer: coarse) and (orientation: landscape) {
+    .pv-world { max-width: none; }
+    .pv-canvas { height: calc(100dvh - 44px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+      width: auto; max-width: 100%; margin: 0 auto; }
+    .pv-battle { min-height: 100dvh; }
   }
 `;
