@@ -2097,6 +2097,25 @@ function initG() {
 // component
 // ============================================================
 
+// Saves from before a map-layout change can hold positions that are now
+// out of bounds or inside walls. Snap to nearby ground, else the town plaza.
+function sanitizeLoadedSave(g) {
+  const valid = (map, x, y) => {
+    const m = MAPS[map];
+    if (!m) return false;
+    const row = m.grid[y];
+    if (!row || x < 0 || x >= row.length) return false;
+    return ".,tumn".includes(row[x]) && !(m.npcs || []).some((n) => n.x === x && n.y === y);
+  };
+  if (valid(g.map, g.x, g.y)) return g;
+  for (let r = 1; r <= 8; r++)
+    for (let dy = -r; dy <= r; dy++)
+      for (let dx = -r; dx <= r; dx++)
+        if (Math.max(Math.abs(dx), Math.abs(dy)) === r && valid(g.map, g.x + dx, g.y + dy))
+          return Object.assign(g, { x: g.x + dx, y: g.y + dy });
+  return Object.assign(g, { map: "town", x: 19, y: 15 });
+}
+
 export default function PaleVigil() {
   const [G, setG] = useState(() => {
     try {
@@ -2108,7 +2127,7 @@ export default function PaleVigil() {
           Object.assign(g, data, { screen: "world", dialog: null, battle: null, menu: null, shop: false, starterPick: false, saveIO: null });
           if (!g.visited) g.visited = {};
           if (!g.learnQueue) g.learnQueue = [];
-          return g;
+          return sanitizeLoadedSave(g);
         }
       }
     } catch (e) {}
@@ -2291,6 +2310,7 @@ export default function PaleVigil() {
       const data = JSON.parse(decodeURIComponent(escape(atob(str.trim()))));
       if (!data.party || !data.bag || !MAPS[data.map]) throw new Error("bad");
       Object.assign(g, initG(), data, { screen: "world" });
+      sanitizeLoadedSave(g);
       if (!g.visited) g.visited = {};
       g.visited[g.map] = true;
       startDialog(g, ["The Veil remembers you. Welcome back, Warden."]);
