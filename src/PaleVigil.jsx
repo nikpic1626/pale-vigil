@@ -865,8 +865,8 @@ export const MAPS = {
       "##m=ttt.=.,.......,,......,..........#",
       "###=......,.....l.,,.l....,.......,,,,",
       "###======.,...,,,,,,....,,,,,,,,,,,,,,",
-      "###...........,,,,,,....,,,,,,,,,,,,,#",
-      "###...........,,,,,,,,,,,,........b..#",
+      "###...........,,,,,,....,,b,,,,,,,,,,#",
+      "###..........b,,,,,,,,,,,,m.......b..#",
       "###.....rrrrrr,,c,,,,,,,,,...........#",
       "###.....rrrrrr.,.......,rrrr.........#",
       "###.....hhhhhh.,.......,hhhhl.......##",
@@ -2071,6 +2071,17 @@ function stageMult(s) { return s >= 0 ? (2 + s) / 2 : 2 / (2 - s); }
 function typeTag(t) { return TYPES[t].n; }
 
 // fresh game state
+// The dev kit: a strong full party, stocked bag, embers, and the whole map
+// revealed. Used by DEV_MODE and by the "nik" tester name (see startAdventure).
+function applyDevKit(g, lvl = 30) {
+  g.party = ["pyrewraith", "mausohound", "duskveil", "hemolich", "ossari", "paleling"].map((s) => makeMon(s, lvl));
+  g.party.forEach((m) => { g.bound[m.sp] = true; });
+  g.bag = { salve: 20, gsalve: 20, incense: 10, sigil: 25, gsigil: 25, kindred: 1, bonering: 1, leechfang: 1, ironvigil: 1, swift: 1, cursedeye: 1 };
+  g.embers = 9999;
+  g.flags.starter = true;
+  Object.keys(MAPS).forEach((k) => { g.visited[k] = true; });
+}
+
 function initG() {
   const g = {
     screen: "title",
@@ -2082,14 +2093,7 @@ function initG() {
     battle: null, ending: false,
     saveIO: null, // 'export' | 'import'
   };
-  if (DEV_MODE) {
-    g.party = ["pyrewraith", "mausohound", "duskveil", "hemolich", "ossari", "paleling"].map((s) => makeMon(s, 30));
-    g.party.forEach((m) => { g.bound[m.sp] = true; });
-    g.bag = { salve: 20, gsalve: 20, incense: 10, sigil: 25, gsigil: 25, kindred: 1, bonering: 1, leechfang: 1, ironvigil: 1, swift: 1, cursedeye: 1 };
-    g.embers = 9999;
-    g.flags.starter = true;
-    Object.keys(MAPS).forEach((k) => { g.visited[k] = true; });
-  }
+  if (DEV_MODE) applyDevKit(g, 30);
   return g;
 }
 
@@ -2144,7 +2148,7 @@ export default function PaleVigil() {
     const m = MAPS[g.map];
     if (y < 0 || y >= m.grid.length || x < 0 || x >= m.grid[0].length) return "#";
     let ch = m.grid[y][x];
-    if (ch === "X" && (DEV_MODE || (m.gateFlag && g.flags[m.gateFlag]))) ch = ","; // opened gate
+    if (ch === "X" && (DEV_MODE || g.dev || (m.gateFlag && g.flags[m.gateFlag]))) ch = ","; // opened gate
     return ch;
   };
   const npcAt = (g, x, y) => (MAPS[g.map].npcs || []).find((n) => n.x === x && n.y === y && !(n.trainer === "king" && g.flags.king));
@@ -2416,6 +2420,17 @@ export default function PaleVigil() {
     g.name = (name.trim() || "Warden").slice(0, 12);
     g.sprite = sprite;
     g.screen = "world";
+    // tester name: full dev kit + every gate open, without marking bosses beaten
+    if (g.name.trim().toLowerCase() === "nik") {
+      g.dev = true;
+      applyDevKit(g, 42);
+      startDialog(g, [
+        "The Veil parts before you without being asked. It remembers its maker.",
+        "(Dev sight granted: every gate stands open, the map is bare to you, and six elder Dreads walk at your side.)",
+        "The King's Guard still hold their halls, if you wish to test their strength.",
+      ]);
+      return;
+    }
     startDialog(g, [
       `${g.name}. Hollow Vale has been waiting for you.`,
       "For 400 years the Vigil Flame held the Veil shut, and the Dreads were only stories. Three nights ago, the Flame went out.",
@@ -2513,7 +2528,7 @@ export default function PaleVigil() {
       const y0 = Math.max(0, Math.floor(camY / T)), y1 = Math.min(m.grid.length, Math.ceil((camY + VH) / T) + 1);
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
         let ch = m.grid[y][x];
-        if (ch === "X" && (DEV_MODE || (m.gateFlag && g.flags[m.gateFlag]))) ch = ",";
+        if (ch === "X" && (DEV_MODE || g.dev || (m.gateFlag && g.flags[m.gateFlag]))) ch = ",";
         const px = x * T, py = y * T;
         const seed = (x * 7 + y * 13) % 5;
         ctx.fillStyle = th.ground; ctx.fillRect(px, py, T, T);
@@ -3186,57 +3201,80 @@ export default function PaleVigil() {
       const cv = ref.current; if (!cv) return;
       const ctx = cv.getContext("2d");
       ctx.imageSmoothingEnabled = false;
-      ctx.fillStyle = "#0d0b14"; ctx.fillRect(0, 0, 380, 420);
+      ctx.fillStyle = "#0d0b14"; ctx.fillRect(0, 0, cv.width, cv.height);
+      // the region drawn as one landmass: spine stacked south->north, side areas edge-adjacent,
+      // 1px per tile — roads align across map borders by construction
       const SPINE = ["town","oldroad","ashgrove","woods1","woods2","fenmoor","mire1","mire2","vesperrest","chapel","palegate","underveil","lastlantern","threshold","court","behindveil"];
-      const POS = {}; SPINE.forEach((k, i) => { POS[k] = [70, 372 - i * 23]; });
-      const DETOUR = { orchard: ["woods1", -1], hamlet: ["mire1", 1], gravemarch: ["hamlet", 1], shallows: ["chapel", 1] };
-      Object.entries(DETOUR).forEach(([k, [anchor, dir]]) => { const a = POS[anchor] || POS.town; POS[k] = [a[0] + dir * 150, a[1]]; });
-      const LINKS = []; for (let i = 0; i < SPINE.length - 1; i++) LINKS.push([SPINE[i], SPINE[i+1]]); Object.entries(DETOUR).forEach(([k, [a]]) => LINKS.push([a, k]));
-      const BOSS = { ashgrove: "ash", fenmoor: "sol", vesperrest: "choir", palegate: "paleknight", lastlantern: "hand", court: "king" };
-      ctx.strokeStyle = "#3a3448"; ctx.lineWidth = 2;
-      LINKS.forEach(([a, b]) => {
-        if (!G.visited[a] || !G.visited[b]) return;
-        const A = POS[a], B = POS[b];
-        ctx.beginPath(); ctx.moveTo(A[0] + 30, A[1] + 10); ctx.lineTo(B[0] + 30, B[1] + 10); ctx.stroke();
-      });
+      const dimsOf = (k) => [MAPS[k].grid[0].length, MAPS[k].grid.length];
+      const totalH = SPINE.reduce((a, k) => a + dimsOf(k)[1], 0);
+      const SPINEX = 34, EASTX = SPINEX + 38, MX = 6, MY = 16;
+      const L = {};
+      let yy = totalH;
+      for (const k of SPINE) { yy -= dimsOf(k)[1]; L[k] = [SPINEX, yy]; }
+      L.orchard = [SPINEX - dimsOf("orchard")[0], L.woods1[1]];
+      L.hamlet = [SPINEX - dimsOf("hamlet")[0], L.mire1[1]];
+      L.gravemarch = [L.hamlet[0], L.hamlet[1] - dimsOf("gravemarch")[1]];
+      L.shallows = [EASTX, L.chapel[1]];
       const tileColor = (th, ch) =>
         ch === "#" ? th.treeTop : ch === "w" ? th.water : ch === "," ? th.path : ch === "t" ? th.tall :
         (ch === "h" || ch === "r") ? th.roof : ch === "X" ? th.gateG : ch === "=" ? th.fence :
-        (ch === "d" || ch === "g" || ch === "c") ? th.door : ch === "G" ? th.wall : (ch === "B" || ch === "T" || ch === "K" || ch === "C") ? th.roof : ch === "u" ? th.path : ch === "b" ? th.treeTop : (ch === "l" || ch === "s") ? th.door : th.ground;
-      for (const [id, [px, py]] of Object.entries(POS)) {
+        (ch === "d" || ch === "g" || ch === "c") ? th.door : ch === "G" ? th.wall : ch === "u" ? th.path :
+        ch === "b" ? th.treeTop : (ch === "l" || ch === "s") ? th.door : th.ground;
+      const BOSS = { ashgrove: "ash", fenmoor: "sol", vesperrest: "choir", palegate: "paleknight", lastlantern: "hand", court: "king" };
+      for (const [id, [px, py]] of Object.entries(L)) {
         const m = MAPS[id];
+        const [w2, h2] = dimsOf(id);
         if (!G.visited[id]) {
-          ctx.fillStyle = "#14111c"; ctx.fillRect(px, py, 60, 20);
-          ctx.strokeStyle = "#2a2536"; ctx.strokeRect(px + 0.5, py + 0.5, 59, 19);
-          ctx.fillStyle = "#4a4458"; ctx.font = "7px monospace"; ctx.fillText("???", px + 24, py + 13);
+          ctx.fillStyle = "#14111c"; ctx.fillRect(MX + px, MY + py, w2, h2);
+          ctx.strokeStyle = "#241f30"; ctx.strokeRect(MX + px + 0.5, MY + py + 0.5, w2 - 1, h2 - 1);
           continue;
         }
         const th = THEMES[m.theme];
-        const MW2 = m.grid[0].length, MH2 = m.grid.length, tw = 60 / MW2, th2 = 20 / MH2;
-        for (let y = 0; y < MH2; y++) for (let x = 0; x < MW2; x++) {
-          ctx.fillStyle = tileColor(th, m.grid[y][x]); ctx.fillRect(px + x * tw, py + y * th2, tw, th2);
+        for (let y = 0; y < h2; y++) for (let x = 0; x < w2; x++) {
+          ctx.fillStyle = tileColor(th, m.grid[y][x]); ctx.fillRect(MX + px + x, MY + py + y, 1, 1);
         }
-        ctx.strokeStyle = "#6a6050"; ctx.strokeRect(px + 0.5, py + 0.5, 59, 19);
-        ctx.fillStyle = "#b0a894"; ctx.font = "7px monospace";
-        ctx.fillText(m.name.split(" — ")[0].slice(0, 16), px, py + 28);
         if (BOSS[id]) {
           ctx.fillStyle = G.flags[TRAINERS[BOSS[id]].flag] ? "#c9a55c" : "#e04545";
-          ctx.fillRect(px + 53, py + 2, 5, 5);
-        }
-        if (G.map === id) {
-          ctx.fillStyle = "#ffd977";
-          ctx.fillRect(px + G.x * 2.5 - 1, py + G.y * 1.25 - 1, 4, 4);
+          ctx.fillRect(MX + px + w2 - 5, MY + py + 2, 3, 3);
         }
       }
+      // the veil passage — a dashed thread between the Threshold and the Underveil
+      if (G.visited.underveil && G.visited.threshold) {
+        ctx.strokeStyle = "#b06ad0"; ctx.setLineDash([2, 2]); ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(MX + L.underveil[0] + 1, MY + L.underveil[1] + 13);
+        ctx.lineTo(MX + L.underveil[0] - 9, MY + L.underveil[1] + 13);
+        ctx.lineTo(MX + L.threshold[0] - 9, MY + L.threshold[1] + 13);
+        ctx.lineTo(MX + L.threshold[0] + 1, MY + L.threshold[1] + 13);
+        ctx.stroke(); ctx.setLineDash([]);
+      }
+      // player dot (interiors resolve to their town)
+      const INTERIOR_OF = { elder_house: "town", town_shop: "town", vigil_hall: "town", town_home: "town",
+        ash_hall: "ashgrove", ash_home: "ashgrove", fen_hall: "fenmoor", fen_home: "fenmoor",
+        vesper_hall: "vesperrest", vesper_home: "vesperrest", pale_hall: "palegate", pale_home: "palegate",
+        lantern_hall: "lastlantern", lantern_home: "lastlantern", hamlet_home1: "hamlet", hamlet_home2: "hamlet" };
+      const here = L[G.map] ? G.map : INTERIOR_OF[G.map];
+      if (here && L[here]) {
+        const [px, py] = L[here];
+        const dx = L[G.map] ? G.x : Math.floor(dimsOf(here)[0] / 2);
+        const dy = L[G.map] ? G.y : Math.floor(dimsOf(here)[1] / 2);
+        ctx.fillStyle = "#0d0b14"; ctx.fillRect(MX + px + dx - 2, MY + py + dy - 2, 5, 5);
+        ctx.fillStyle = "#ffd977"; ctx.fillRect(MX + px + dx - 1, MY + py + dy - 1, 3, 3);
+      }
+      // heading + legend
+      ctx.font = "8px monospace";
+      ctx.fillStyle = "#c9a55c"; ctx.fillText("THE NORTH ROAD", MX, 10);
+      ctx.fillStyle = "#8a8070"; ctx.fillText(MAPS[G.map].name.split(" \u2014 ")[0].slice(0, 22), MX + 78, 10);
+      const lx = EASTX + 40, ly = MY + 6;
       ctx.font = "7px monospace";
-      ctx.fillStyle = "#ffd977"; ctx.fillRect(250, 388, 4, 4);
-      ctx.fillStyle = "#8a8070"; ctx.fillText("you", 258, 394);
-      ctx.fillStyle = "#e04545"; ctx.fillRect(250, 400, 4, 4);
-      ctx.fillStyle = "#8a8070"; ctx.fillText("guard waits", 258, 406);
-      ctx.fillStyle = "#c9a55c"; ctx.fillRect(250, 412, 4, 4);
-      ctx.fillStyle = "#8a8070"; ctx.fillText("guard beaten", 258, 418);
+      ctx.fillStyle = "#ffd977"; ctx.fillRect(lx, ly, 3, 3);
+      ctx.fillStyle = "#8a8070"; ctx.fillText("you", lx + 7, ly + 4);
+      ctx.fillStyle = "#e04545"; ctx.fillRect(lx, ly + 12, 3, 3);
+      ctx.fillStyle = "#8a8070"; ctx.fillText("guard", lx + 7, ly + 16);
+      ctx.fillStyle = "#c9a55c"; ctx.fillRect(lx, ly + 24, 3, 3);
+      ctx.fillStyle = "#8a8070"; ctx.fillText("beaten", lx + 7, ly + 28);
     }, [G.map, G.x, G.y, G.visited, G.flags, G.menu]);
-    return <canvas ref={ref} width={380} height={420} style={{ width: "100%", maxWidth: 380, imageRendering: "pixelated", display: "block", margin: "0 auto" }} />;
+    return <canvas ref={ref} width={190} height={436} style={{ width: "100%", maxWidth: 380, imageRendering: "pixelated", display: "block", margin: "0 auto" }} />;
   }
 
   function HpBar({ hp, max }) {

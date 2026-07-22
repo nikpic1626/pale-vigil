@@ -196,7 +196,7 @@ function buildTown() {
   blob(g, rng, 5, 12, 2, 1.2, "t", ["."]);
   scatter(g, rng, "b", 7); scatter(g, rng, "m", 4);
   set(g, 16, 13, "l"); set(g, 21, 13, "l"); set(g, 17, 5, "l"); set(g, 28, 19, "l");
-  set(g, 16, 17, "c");
+  set(g, 16, 17, "c"); set(g, 13, 16, "b"); set(g, 26, 15, "b"); set(g, 26, 16, "m");
   finish(key, g, {
     exits: [...exN(AL.town_oldroad_x, "oldroad", AL.town_oldroad_x, h("oldroad")),
             ...exE(AL.town_oldroadE_y, W, "oldroad", AL.town_oldroadE_y)],
